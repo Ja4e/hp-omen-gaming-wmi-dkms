@@ -1523,6 +1523,11 @@ static int platform_profile_omen_set_ec(enum platform_profile_option profile)
 	if (board_name && strcmp(board_name, "8E35") == 0) {
 		/* This calls the function usually reserved for Victus laptops */
 		victus_s_gpu_thermal_profile_set(gpu_ctgp_enable, gpu_ppab_enable, gpu_dstate);
+	
+		/* NEW: Expand CPU/GPU Concurrent Power Limit to prevent throttling under load */
+		if (profile == PLATFORM_PROFILE_PERFORMANCE) {
+			victus_s_set_cpu_pl1_pl2(HP_POWER_LIMIT_DEFAULT, HP_POWER_LIMIT_DEFAULT);
+		}
 	}
 
 	if (has_omen_thermal_profile_ec_timer()) {
@@ -1785,7 +1790,7 @@ static int victus_s_set_cpu_pl1_pl2(u8 pl1, u8 pl2)
 	power_limits.pl1 = pl1;
 	power_limits.pl2 = pl2;
 	power_limits.pl4 = HP_POWER_LIMIT_NO_CHANGE;
-	power_limits.cpu_gpu_concurrent_limit = HP_POWER_LIMIT_NO_CHANGE;
+	power_limits.cpu_gpu_concurrent_limit = HP_POWER_LIMIT_DEFAULT;
 
 	ret = hp_wmi_perform_query(HPWMI_SET_POWER_LIMITS_QUERY, HPWMI_GM,
 				   &power_limits, sizeof(power_limits), 0);
