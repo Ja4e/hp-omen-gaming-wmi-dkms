@@ -1,6 +1,6 @@
 # ⚡ HP OMEN 16 (8E35) Linux Patch
 
-This patch enables full hardware control for the HP OMEN 16 (Board ID `8E35`), unlocking performance limits and enabling native lighting control via `hp-wmi`.
+This patch enables full hardware control for the HP OMEN 16 (Board ID `8D87`), unlocking performance limits and enabling native lighting control via `hp-wmi`.
 
 ## 🔥 Features
 
