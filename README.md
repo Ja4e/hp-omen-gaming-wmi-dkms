@@ -5,7 +5,7 @@ This patch enables full hardware control for the HP OMEN 16 (Board ID `8D87`), u
 ## 🔥 Features
 
 * **Nvidia GPU TGP Unleashed:** Removes the artificial Total Graphics Power (TGP) limit enforced by the embedded controller, allowing your GPU to draw full wattage for maximum performance.
-* **4-Zone RGB Control:** Adds a sysfs interface to manually control the 4-zone keyboard backlight without needing external bloated software.
+* **4-Zone RGB Control:** Adds a sysfs interface to manually control the 4-zone keyboard backlight without needing external bloated software. for the lightbar haha it somehow works
 
 ## 🌈 Keyboard Backlight Usage
 
