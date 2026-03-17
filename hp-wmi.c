@@ -48,6 +48,7 @@ MODULE_ALIAS("wmi:5FB7F034-2C63-45E9-BE91-3D44E2C707E4");
 
 enum hp_ec_offsets {
 	HP_EC_OFFSET_UNKNOWN				= 0x00,
+	HP_NO_THERMAL_PROFILE_OFFSET			= 0x01,
 	HP_VICTUS_S_EC_THERMAL_PROFILE_OFFSET		= 0x59,
 	HP_OMEN_EC_THERMAL_PROFILE_FLAGS_OFFSET		= 0x62,
 	HP_OMEN_EC_THERMAL_PROFILE_TIMER_OFFSET		= 0x63,
@@ -118,6 +119,13 @@ static const struct thermal_profile_params omen_v1_thermal_params = {
 	.balanced	= HP_OMEN_V1_THERMAL_PROFILE_DEFAULT,
 	.low_power	= HP_OMEN_V1_THERMAL_PROFILE_DEFAULT,
 	.ec_tp_offset	= HP_VICTUS_S_EC_THERMAL_PROFILE_OFFSET,
+};
+
+static const struct thermal_profile_params omen_v1_no_ec_thermal_params = {
+	.performance	= HP_OMEN_V1_THERMAL_PROFILE_PERFORMANCE,
+	.balanced	= HP_OMEN_V1_THERMAL_PROFILE_DEFAULT,
+	.low_power	= HP_OMEN_V1_THERMAL_PROFILE_DEFAULT,
+	.ec_tp_offset	= HP_NO_THERMAL_PROFILE_OFFSET,
 };
 
 /*
@@ -203,7 +211,7 @@ static const struct dmi_system_id victus_s_thermal_profile_boards[] __initconst 
 	},
 	{
 		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8D87") },
-		.driver_data = (void *)&victus_s_thermal_params,
+		.driver_data = (void *)&omen_v1_no_ec_thermal_params,
 	},
 	{},
 };
@@ -437,14 +445,14 @@ struct hp_wmi_hwmon_priv {
 };
 
 struct victus_s_fan_table_header {
+	u8 num_fans;
 	u8 unknown;
-	u8 num_entries;
 } __packed;
 
 struct victus_s_fan_table_entry {
 	u8 cpu_rpm;
 	u8 gpu_rpm;
-	u8 unknown;
+	u8 noise_db;
 } __packed;
 
 struct victus_s_fan_table {
@@ -1805,7 +1813,8 @@ static int platform_profile_victus_s_get_ec(enum platform_profile_option *profil
 	const struct thermal_profile_params *params;
 
 	params = active_thermal_profile_params;
-	if (params->ec_tp_offset == HP_EC_OFFSET_UNKNOWN) {
+	if (params->ec_tp_offset == HP_EC_OFFSET_UNKNOWN ||
+	    params->ec_tp_offset == HP_NO_THERMAL_PROFILE_OFFSET) {
 		*profile = active_platform_profile;
 		return 0;
 	}
@@ -2160,7 +2169,8 @@ static int thermal_profile_setup(struct platform_device *device)
 		 * behaves like a wrapper around active_platform_profile, to avoid using
 		 * uninitialized data, we default to PLATFORM_PROFILE_BALANCED.
 		 */
-		if (active_thermal_profile_params->ec_tp_offset == HP_EC_OFFSET_UNKNOWN) {
+		if (active_thermal_profile_params->ec_tp_offset == HP_EC_OFFSET_UNKNOWN ||
+		    active_thermal_profile_params->ec_tp_offset == HP_NO_THERMAL_PROFILE_OFFSET) {
 			active_platform_profile = PLATFORM_PROFILE_BALANCED;
 		} else {
 			err = platform_profile_victus_s_get_ec(&active_platform_profile);
@@ -2518,7 +2528,9 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 	u8 fan_data[128] = { 0 };
 	struct victus_s_fan_table *fan_table;
 	u8 min_rpm, max_rpm, gpu_delta;
-	int ret;
+	u8 cpu_rpm, gpu_rpm, noise_db;
+	int ret, num_entries, i;
+	size_t header_size, entry_size;
 
 	/* Default behaviour on hwmon init is automatic mode */
 	priv->mode = PWM_MODE_AUTO;
@@ -2533,9 +2545,36 @@ static int hp_wmi_setup_fan_settings(struct hp_wmi_hwmon_priv *priv)
 		return ret;
 
 	fan_table = (struct victus_s_fan_table *)fan_data;
+	if (fan_table->header.num_fans == 0)
+		return -EINVAL;
 
-	min_rpm = fan_table->entries[0].cpu_rpm;
-	max_rpm = 60;
+	header_size = sizeof(struct victus_s_fan_table_header);
+	entry_size = sizeof(struct victus_s_fan_table_entry);
+	num_entries = (sizeof(fan_data) - header_size) / entry_size;
+	min_rpm = U8_MAX;
+	max_rpm = 0;
+
+	for (i = 0 ; i < num_entries ; i++) {
+		cpu_rpm = fan_table->entries[i].cpu_rpm;
+		gpu_rpm = fan_table->entries[i].gpu_rpm;
+		noise_db = fan_table->entries[i].noise_db;
+
+		/*
+		 * On some devices, the fan table is truncated with an all-zero row,
+		 * hence we stop parsing here.
+		 */
+		if (cpu_rpm == 0 && gpu_rpm == 0 && noise_db == 0)
+			break;
+
+		if (cpu_rpm < min_rpm)
+			min_rpm = cpu_rpm;
+		if (cpu_rpm > max_rpm)
+			max_rpm = cpu_rpm;
+	}
+
+	if (min_rpm == U8_MAX || max_rpm == 0)
+		return -EINVAL;
+
 	gpu_delta = fan_table->entries[0].gpu_rpm - fan_table->entries[0].cpu_rpm;
 	priv->min_rpm = min_rpm;
 	priv->max_rpm = max_rpm;
